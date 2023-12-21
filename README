@@ -1,12 +1,9 @@
-The main function is graphs.py
-graphs.py calls printing1graph.py several times.
+The main function is generate_graphs.py
+It calls printing1graph.py several times.
 printing1graph.py requires accuracy.py and datagen.py
 
-myLDA.py and myLinearModelBase.py are the official python 
-functions modified to test the conditional imputation and 
-so are required only for this kind of imputation.
-
-imputation_decision.py is used to choose the best imputation 
+myLDA.py and myLinearModelBase.py enable conditional imputation.
+Imputation_decision.py is used to choose the best imputation 
 method so will appear only in graphs which show the line "optimal imputation"
 
 data_extractor.py and real_life_data.py are used only to obtain graphs 
