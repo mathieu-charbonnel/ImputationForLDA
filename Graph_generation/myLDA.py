@@ -1,6 +1,5 @@
 import warnings
 import numpy as np
-from sklearn.exceptions import ChangedBehaviorWarning
 from scipy import linalg
 from scipy.special import expit
 
@@ -391,7 +390,7 @@ class LinearDiscriminantAnalysis(BaseEstimator, lmb.LinearClassifierMixin,
                     "n_classes - 1). Using min(n_features, "
                     "n_classes - 1) = min(%d, %d - 1) = %d components."
                     % (X.shape[1], len(self.classes_), max_components),
-                    ChangedBehaviorWarning)
+                    FutureWarning)
                 future_msg = ("In version 0.23, setting n_components > min("
                               "n_features, n_classes - 1) will raise a "
                               "ValueError. You should set n_components to None"

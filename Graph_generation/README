@@ -2,7 +2,7 @@ The main function is graphs.py
 graphs.py calls printing1graph.py several times.
 printing1graph.py requires accuracy.py and datagen.py
 
-myLDA.py and myLinearModelBase.py are the oficial python 
+myLDA.py and myLinearModelBase.py are the official python 
 functions modified to test the conditional imputation and 
 so are required only for this kind of imputation.
 
