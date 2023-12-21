@@ -1,4 +1,4 @@
-import printing1graph as pr
+import src.plots.printing1graph as pr
 
 #Parameters
 dimensions=[5,10,25,50,100]

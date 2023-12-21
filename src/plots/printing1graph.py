@@ -1,9 +1,9 @@
 import numpy as np
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-import myLDA as ml
+from ..models import myLDA as ml
 from sklearn.linear_model import LinearRegression
-import datagen as dt
-import accuracy as acc
+from ..loading import datagen as dt
+from ..metrics import accuracy as acc
 import matplotlib.pyplot as plt
 import random as rd
 

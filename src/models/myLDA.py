@@ -4,7 +4,7 @@ from scipy import linalg
 from scipy.special import expit
 
 from sklearn.base import BaseEstimator, TransformerMixin, ClassifierMixin
-import myLinearModelBase as lmb
+from ..models import myLinearModelBase as lmb
 from sklearn.covariance import ledoit_wolf, empirical_covariance, shrunk_covariance
 from sklearn.utils.multiclass import unique_labels
 from sklearn.utils import check_array, check_X_y

@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.datasets import make_spd_matrix
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-import myLDA as ml
+from ..models import myLDA as ml
 from sklearn.linear_model import LinearRegression
 import random as rd
 
