@@ -22,7 +22,7 @@ def data_generation(ncov,dim,len_training,len_testing):
             cov[i][i]*=5
     if (ncov=='random'):
         cov=make_spd_matrix(dim, random_state=None)
-    print(cov)
+    # print(cov)
     #Training generation
     X_training=[]
     Y_training=[]

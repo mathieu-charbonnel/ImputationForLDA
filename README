@@ -1,10 +1,26 @@
-The main function is generate_graphs.py
-It calls printing1graph.py several times.
-printing1graph.py requires accuracy.py and datagen.py
+# Classification of pairs Sequence feature/Categorical feature 
 
-myLDA.py and myLinearModelBase.py enable conditional imputation.
-Imputation_decision.py is used to choose the best imputation 
-method so will appear only in graphs which show the line "optimal imputation"
+## Description
 
-data_extractor.py and real_life_data.py are used only to obtain graphs 
-on our banknote dataset
+## Getting Started
+### Dependencies
+
+### Installing
+cd ImputationForLDA \
+conda create --name {env} --file requirements.txt
+### Executing program
+cd ImputationForLDA \
+python main.py --dimensions 5 --cov_matrice normal --probs_missingness 0.1 --type_missingness MCAR
+## Help
+Please reach out.
+## Authors
+Mathieu Charbonnel
+## Version History
+
+* December 2023
+    * Initial Release
+
+## License
+This project is not licensed.
+
+## Acknowledgments

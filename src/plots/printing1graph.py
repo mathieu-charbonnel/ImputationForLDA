@@ -78,9 +78,3 @@ def one_graph(ncov,dim,type_missingness,prob_missingness):
     plt.show()
     #plt.savefig('Covariance: '+ ncov+ '  Dim: '+ str(dim) +'  Type missingness: ' +type_missingness+ '  Prob_missingness: '+ str(p)+'.jpg')
 
-
-''' cov_matrices : normal,str_correlation_higherIndex,str_correlation+high_diagonal '''
-'''type of missingness : MCAR, MAR, MNAR'''
-
-
-one_graph('random1',6,'MCAR',0.2)
