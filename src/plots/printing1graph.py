@@ -1,80 +1,122 @@
+from __future__ import annotations
+
+import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from ..models import myLDA as ml
-from sklearn.linear_model import LinearRegression
+
 from ..loading import datagen as dt
 from ..metrics import accuracy as acc
-import matplotlib.pyplot as plt
-import random as rd
 
-nb_tests=10
-Imputation_technics=['g_mean','conditional_mean', 'nearest_neigbours','regression']
-used_trs=[50,100,250,500,1000,2000]
+NB_TESTS = 10
+TRAINING_SET_SIZES = [50, 100, 250, 500, 1000, 2000]
+TRAINING_SET_LABELS = ["50", "100", "250", "500", "1000", "2000"]
 
 
-'''d=dt.full_gen('normal',3,50,500,'MNAR',0.90)
-X1=d[0]
-Y1=d[1]
-X2=d[2]
-Y2=d[3]
-print(acc.acc(X1,Y1,X2,Y2,'grand_mean'))'''
+def one_graph(
+    covariance_type: str,
+    dim: int,
+    type_missingness: str,
+    prob_missingness: float,
+) -> None:
+    num_sizes = len(TRAINING_SET_SIZES)
+    without_imp = np.zeros(num_sizes)
+    grand_mean = np.zeros(num_sizes)
+    conditional_mean = np.zeros(num_sizes)
+    closest = np.zeros(num_sizes)
+    regression = np.zeros(num_sizes)
+    without_removing = np.zeros(num_sizes)
 
-def one_graph(ncov,dim,type_missingness,prob_missingness):
-    p=prob_missingness
-    without_imp=np.zeros(6)
-    grand_mean=np.zeros(6)
-    conditional_mean=np.zeros(6)
-    closest=np.zeros(6)
-    regression=np.zeros(6)
-    without_removing=np.zeros(6)
-    #multiple_closest=np.zeros(6)
-    #multiple_regression=np.zeros(6)
+    for _ in range(NB_TESTS):
+        data = dt.full_gen(
+            covariance_type, dim, 2000, 1000, type_missingness, prob_missingness
+        )
+        full_x_train = data[0]
+        full_y_train = data[1]
+        x_test = data[2]
+        y_test = data[3]
+        x_train_intact = data[4]
+        x_test_intact = data[5]
 
-    training_set_size=['50','100','250','500','1000','2000']
-    for i in range(nb_tests):
-        data=dt.full_gen(ncov,dim,2000,1000,type_missingness,prob_missingness)
-        fullX1=data[0]
-        fullY1=data[1]
-        X2=data[2]
-        Y2=data[3]
-        X1i=data[4]
-        X2i=data[5]
-        for j in range(6):
-            without_removing[j]+=acc.acc(X1i[0:used_trs[j]][:],fullY1[0:used_trs[j]],X2i,Y2,'no_imputation')
-            without_imp[j]+=acc.acc(fullX1[0:used_trs[j],:],fullY1[0:used_trs[j]],X2,Y2,'no_imputation')
-            grand_mean[j]+=acc.acc(fullX1[0:used_trs[j],:],fullY1[0:used_trs[j]],X2,Y2,'grand_mean')
-            conditional_mean[j]+=acc.acc(fullX1[0:used_trs[j],:],fullY1[0:used_trs[j]],X2,Y2,'conditional_mean')
-            closest[j]+=acc.acc(fullX1[0:used_trs[j],:],fullY1[0:used_trs[j]],X2,Y2,'closest')
-            regression[j]+=acc.acc(fullX1[0:used_trs[j],:],fullY1[0:used_trs[j]],X2,Y2,'regression')
-            #multiple_closest[j]+=acc.acc(fullX1[0:used_trs[j],:],fullY1[0:used_trs[j]],X2,Y2,'multiple_closest')
-            #multiple_regression[j]+=acc.acc(fullX1[0:used_trs[j],:],fullY1[0:used_trs[j]],X2,Y2,'multiple_regression')
-    without_removing/=nb_tests
-    without_imp/=nb_tests
-    grand_mean/=nb_tests
-    conditional_mean/=nb_tests
-    closest/=nb_tests
-    regression/=nb_tests
-    #multiple_closest/=nb_tests
-    #multiple_regression/=nb_tests
+        for j in range(num_sizes):
+            size = TRAINING_SET_SIZES[j]
+            without_removing[j] += acc.acc(
+                x_train_intact[0:size][:],
+                full_y_train[0:size],
+                x_test_intact,
+                y_test,
+                "no_imputation",
+            )
+            without_imp[j] += acc.acc(
+                full_x_train[0:size, :],
+                full_y_train[0:size],
+                x_test,
+                y_test,
+                "no_imputation",
+            )
+            grand_mean[j] += acc.acc(
+                full_x_train[0:size, :],
+                full_y_train[0:size],
+                x_test,
+                y_test,
+                "grand_mean",
+            )
+            conditional_mean[j] += acc.acc(
+                full_x_train[0:size, :],
+                full_y_train[0:size],
+                x_test,
+                y_test,
+                "conditional_mean",
+            )
+            closest[j] += acc.acc(
+                full_x_train[0:size, :],
+                full_y_train[0:size],
+                x_test,
+                y_test,
+                "closest",
+            )
+            regression[j] += acc.acc(
+                full_x_train[0:size, :],
+                full_y_train[0:size],
+                x_test,
+                y_test,
+                "regression",
+            )
 
-    plt.figure(figsize=(10,5))
-    plt.plot(training_set_size,without_removing, color = 'purple', linewidth = 2)
-    plt.plot(training_set_size,without_imp, color = 'green', linewidth = 2)
-    plt.plot(training_set_size,grand_mean, color = 'blue', linewidth = 2)
-    plt.plot(training_set_size,conditional_mean, color = 'orange', linewidth = 2)
-    plt.plot(training_set_size,closest, color = 'red', linewidth = 2)
-    plt.plot(training_set_size,regression, color = 'black', linewidth = 2)
-    #plt.plot(training_set_size,multiple_closest, color = 'pink', linewidth = 2)
-    #plt.plot(training_set_size,multiple_regression, color = 'grey', linewidth = 2)
+    without_removing /= NB_TESTS
+    without_imp /= NB_TESTS
+    grand_mean /= NB_TESTS
+    conditional_mean /= NB_TESTS
+    closest /= NB_TESTS
+    regression /= NB_TESTS
 
-    mylabels = ['without_removing','No imputation', 'Grand Mean', 'Conditional Mean','Closest neighbour','Regression']
-    #,'multiple_closest','multiple_regression'
+    plt.figure(figsize=(10, 5))
+    plt.plot(TRAINING_SET_LABELS, without_removing, color="purple", linewidth=2)
+    plt.plot(TRAINING_SET_LABELS, without_imp, color="green", linewidth=2)
+    plt.plot(TRAINING_SET_LABELS, grand_mean, color="blue", linewidth=2)
+    plt.plot(TRAINING_SET_LABELS, conditional_mean, color="orange", linewidth=2)
+    plt.plot(TRAINING_SET_LABELS, closest, color="red", linewidth=2)
+    plt.plot(TRAINING_SET_LABELS, regression, color="black", linewidth=2)
 
-    plt.title('Covariance: '+ ncov+ '  Dim: '+ str(dim) +'  Type missingness: ' +type_missingness+ '  Prob_missingness: '+ str(p))
-    plt.legend(labels = mylabels)
-    plt.ylabel('Accuracy', fontsize = 10)
-    plt.xlabel('Training size', fontsize = 10)
-    plt.axis([ 0,6,0.7,0.95])
+    labels = [
+        "without_removing",
+        "No imputation",
+        "Grand Mean",
+        "Conditional Mean",
+        "Closest neighbour",
+        "Regression",
+    ]
+
+    plt.title(
+        "Covariance: "
+        + covariance_type
+        + "  Dim: "
+        + str(dim)
+        + "  Type missingness: "
+        + type_missingness
+        + "  Prob_missingness: "
+        + str(prob_missingness)
+    )
+    plt.legend(labels=labels)
+    plt.ylabel("Accuracy", fontsize=10)
+    plt.xlabel("Training size", fontsize=10)
+    plt.axis([0, 6, 0.7, 0.95])
     plt.show()
-    #plt.savefig('Covariance: '+ ncov+ '  Dim: '+ str(dim) +'  Type missingness: ' +type_missingness+ '  Prob_missingness: '+ str(p)+'.jpg')
-

@@ -1,342 +1,414 @@
-import numpy as np
-from sklearn.datasets import make_spd_matrix
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from ..models import myLDA as ml
-from sklearn.linear_model import LinearRegression
+from __future__ import annotations
+
 import random as rd
 
-nb_multiple_imputation=10
+import numpy as np
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import accuracy_score
 
-def distance(X1,X2,var):
-    sum=0
-    for i in range(len(X1)):
-        if (X1[i]==0 or X2[i]==0):
-            sum+=1
+from ..models import binary_lda as ml
+
+NB_MULTIPLE_IMPUTATION = 10
+
+
+def _weighted_distance(
+    x1: np.ndarray, x2: np.ndarray, var: np.ndarray
+) -> float:
+    total = 0.0
+    for i in range(len(x1)):
+        if x1[i] == 0 or x2[i] == 0:
+            total += 1
         else:
-            sum+=((X1[i]-X2[i])**2)/(2*var[i])
-    sum=np.sqrt(sum)
-    return(sum)
+            total += ((x1[i] - x2[i]) ** 2) / (2 * var[i])
+    total = np.sqrt(total)
+    return total
 
-def maj_vote(l):
-    dim=len(l[0])
-    T=np.zeros(dim)
+
+def _majority_vote(predictions_list: list[np.ndarray]) -> np.ndarray:
+    dim = len(predictions_list[0])
+    result = np.zeros(dim)
     for i in range(dim):
-        for j in range(len(l)):
-            T[i]+=l[j][i]
-        if (T[i]>len(l)/2):
-            T[i]=1
+        for j in range(len(predictions_list)):
+            result[i] += predictions_list[j][i]
+        if result[i] > len(predictions_list) / 2:
+            result[i] = 1
         else:
-            T[i]=0
-    return(T)
+            result[i] = 0
+    return result
 
-def acc(X1,Y1,X2,Y2,imputation_method):
-    dim=len(X1[0])
-    len_training=len(X1)
-    len_testing=len(X2)
 
-    if (imputation_method=='multiple_closest'):
-        mean=np.zeros(dim)
+def _compute_feature_mean(
+    data: np.ndarray, dim: int, n_samples: int
+) -> np.ndarray:
+    mean = np.zeros(dim)
+    for j in range(dim):
+        n = 0
+        for i in range(n_samples):
+            val = data[i][j]
+            if val != 0:
+                n += 1
+                mean[j] += val
+        mean[j] /= n
+    return mean
+
+
+def _compute_feature_variance(
+    data: np.ndarray, mean: np.ndarray, dim: int, n_samples: int
+) -> np.ndarray:
+    var = np.zeros(dim)
+    for j in range(dim):
+        n = 0
+        for i in range(n_samples):
+            val = data[i][j]
+            if val != 0:
+                n += 1
+                var[j] += (val - mean[j]) ** 2
+        var[j] /= n
+    return var
+
+
+def _impute_closest_single(
+    data: np.ndarray,
+    labels: np.ndarray | None,
+    var: np.ndarray,
+    n_samples: int,
+    dim: int,
+    use_labels: bool,
+) -> np.ndarray:
+    imputed = np.copy(data)
+    for i in range(n_samples):
         for j in range(dim):
-            n=0
-            for i in range(len_training):
-                val=X1[i][j]
-                if (val!=0):
-                    n+=1
-                    mean[j]+=val
-            mean[j]/=n
+            if imputed[i][j] == 0:
+                min_dis = dim + 1
+                closest_index = 0
+                for _ in range(100):
+                    rand_idx = rd.randint(0, n_samples - 1)
+                    if imputed[rand_idx][j] != 0:
+                        if not use_labels or labels[rand_idx] == labels[i]:
+                            dis = _weighted_distance(
+                                imputed[i], imputed[rand_idx], var
+                            )
+                            if dis < min_dis:
+                                closest_index = rand_idx
+                                min_dis = dis
+                imputed[i][j] = imputed[closest_index][j]
+    return imputed
 
-        #variance
 
-        var=np.zeros(dim)
+def _impute_closest_double(
+    data: np.ndarray,
+    labels: np.ndarray | None,
+    var: np.ndarray,
+    n_samples: int,
+    dim: int,
+    use_labels: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    imputed_first = np.copy(data)
+    imputed_second = np.copy(data)
+    for i in range(n_samples):
         for j in range(dim):
-            n=0
-            for i in range(len_training):
-                val=X1[i][j]
-                if (val!=0):
-                    n+=1
-                    var[j]+=(val-mean[j])**2
-            var[j]/=n
+            if imputed_first[i][j] == 0:
+                min_dis1 = dim + 1
+                min_dis2 = dim + 1
+                closest_index1 = 0
+                closest_index2 = 0
+                for _ in range(100):
+                    rand_idx = rd.randint(0, n_samples - 1)
+                    if imputed_first[rand_idx][j] != 0:
+                        if not use_labels or labels[rand_idx] == labels[i]:
+                            dis = _weighted_distance(
+                                imputed_first[i], imputed_first[rand_idx], var
+                            )
+                            if dis < min_dis1:
+                                closest_index1 = rand_idx
+                                min_dis1 = dis
+                            elif dis < min_dis2:
+                                closest_index2 = rand_idx
+                                min_dis2 = dis
+                imputed_first[i][j] = imputed_first[closest_index1][j]
+                imputed_second[i][j] = imputed_second[closest_index2][j]
+    return imputed_first, imputed_second
 
 
-        #Actual Imputation
-        Xaf=np.copy(X1)
-        Xal=np.copy(X1)
-        for i in range(len_training):
-            for j in range(dim):
-                if (Xaf[i][j]==0):
-                    min_dis1=dim+1
-                    min_dis2=dim+1
-                    closest_index1=0
-                    closest_index2=0
-                    for a in range (100):
-                        int=rd.randint(0, len_training-1)
-                        if (Xaf[int][j]!=0) and Y1[int]== Y1[i]:
-                            dis=distance(Xaf[i],Xaf[int],var)
-                            if (dis<min_dis1):
-                                closest_index1=int
-                                min_dis1=dis
-                            elif (dis<min_dis2):
-                                closest_index2=int
-                                min_dis2=dis
-                    Xaf[i][j]=Xaf[closest_index1][j]
-                    Xal[i][j]=Xal[closest_index2][j]
+def _acc_multiple_closest(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+) -> float:
+    dim = len(x_train[0])
+    len_training = len(x_train)
+    len_testing = len(x_test)
 
-        Xbf=np.copy(X2)
-        Xbl=np.copy(X2)
-        for i in range(len_testing):
-            for j in range(dim):
-                if (Xbf[i][j]==0):
-                    min_dis1=dim+1
-                    min_dis2=dim+1
-                    closest_index1=0
-                    closest_index2=0
-                    for a in range (100):
-                        int=rd.randint(0, len_testing-1)
-                        if (Xbf[int][j]!=0):
-                            dis=distance(Xbf[i],Xbf[int],var)
-                            if (dis<min_dis1):
-                                closest_index1=int
-                                min_dis1=dis
-                            elif (dis<min_dis2):
-                                closest_index2=int
-                                min_dis2=dis
-                    Xbf[i][j]=Xbf[closest_index1][j]
-                    Xbl[i][j]=Xbl[closest_index2][j]
+    mean = _compute_feature_mean(x_train, dim, len_training)
+    var = _compute_feature_variance(x_train, mean, dim, len_training)
 
-        predictions=[]
+    x_train_first, x_train_second = _impute_closest_double(
+        x_train, y_train, var, len_training, dim, use_labels=True
+    )
+    x_test_first, x_test_second = _impute_closest_double(
+        x_test, None, var, len_testing, dim, use_labels=False
+    )
 
-        for i in range(nb_multiple_imputation+1):
-            Xa=(i*Xaf+((nb_multiple_imputation)-i)*Xal)/nb_multiple_imputation
-            Xb=(i*Xbf+((nb_multiple_imputation)-i)*Xbl)/nb_multiple_imputation
-            lda = LinearDiscriminantAnalysis()
-            lda.fit(Xa, Y1)
-            predictions.append(lda.predict(Xb))
-
-        sol=maj_vote(predictions)
-
-        from sklearn.metrics import accuracy_score
-        return accuracy_score(Y2, sol)
-
-
-
-
-    if (imputation_method=='no_imputation'):
+    predictions = []
+    for i in range(NB_MULTIPLE_IMPUTATION + 1):
+        x_train_interp = (
+            i * x_train_first + (NB_MULTIPLE_IMPUTATION - i) * x_train_second
+        ) / NB_MULTIPLE_IMPUTATION
+        x_test_interp = (
+            i * x_test_first + (NB_MULTIPLE_IMPUTATION - i) * x_test_second
+        ) / NB_MULTIPLE_IMPUTATION
         lda = LinearDiscriminantAnalysis()
-        lda.fit(X1, Y1)
-        return(lda.score(X2,Y2))
+        lda.fit(x_train_interp, y_train)
+        predictions.append(lda.predict(x_test_interp))
 
-    if (imputation_method=='grand_mean'):
-        N=0
-        Mean=np.zeros(dim)
-        for i in range(len_training):
-            for j in range(dim):
-                val=X1[i][j]
-                if (val!=0):
-                    N+=1
-                    Mean[j]+=val
-        Mean/=N
+    sol = _majority_vote(predictions)
+    return accuracy_score(y_test, sol)
 
-        #Imputing
-        Xa=np.copy(X1)
-        for i in range(len_training):
-            for j in range(dim):
-                if Xa[i][j]==0:
-                    Xa[i][j]=Mean[j]
 
-        Xb=np.copy(X2)
-        for i in range(len_testing):
-            for j in range(dim):
-                if Xb[i][j]==0:
-                    Xb[i][j]=Mean[j]
+def _acc_no_imputation(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+) -> float:
+    lda = LinearDiscriminantAnalysis()
+    lda.fit(x_train, y_train)
+    return lda.score(x_test, y_test)
 
-        lda = LinearDiscriminantAnalysis()
-        lda.fit(Xa, Y1)
-        return(lda.score(Xb,Y2))
 
-    if (imputation_method=='conditional_mean'):
-        N0=0
-        Mean0=np.zeros(dim)
-        N1=0
-        Mean1=np.zeros(dim)
-        for i in range(len_training):
-            if (Y1[i]==0):
-                for j in range(dim):
-                    val=X1[i][j]
-                    if (val!=0):
-                        N0+=1
-                        Mean0[j]+=val
-            else :
-                for j in range(dim):
-                    val=X1[i][j]
-                    if (val!=0):
-                        N1+=1
-                        Mean1[j]+=val
+def _acc_grand_mean(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+) -> float:
+    dim = len(x_train[0])
+    len_training = len(x_train)
+    len_testing = len(x_test)
+
+    total_count = 0
+    grand_mean = np.zeros(dim)
+    for i in range(len_training):
         for j in range(dim):
-            Mean0[j]=Mean0[j]/N0
+            val = x_train[i][j]
+            if val != 0:
+                total_count += 1
+                grand_mean[j] += val
+    grand_mean /= total_count
+
+    x_train_imputed = np.copy(x_train)
+    for i in range(len_training):
         for j in range(dim):
-            Mean1[j]=Mean1[j]/N1
+            if x_train_imputed[i][j] == 0:
+                x_train_imputed[i][j] = grand_mean[j]
 
-        #Imputing the training set
-        Xa=np.copy(X1)
-        for i in range(len_training):
-            for j in range(dim):
-                if Xa[i][j]==0:
-                    if Y1[i]==0:
-                        Xa[i][j]=Mean0[j]
-                    if Y1[i]==1:
-                        Xa[i][j]=Mean1[j]
-
-        #Imputing the testing sets
-
-        Xb1=np.copy(X2)
-        for i in range(len_testing):
-            for j in range(dim):
-                if Xb1[i][j]==0:
-                    Xb1[i][j]=Mean0[j]
-        Xb2=np.copy(X2)
-        for i in range(len_testing):
-            for j in range(dim):
-                if Xb2[i][j]==0:
-                    Xb2[i][j]=Mean1[j]
-
-        lda = ml.LinearDiscriminantAnalysis(n_components=None, priors=None, shrinkage=None,
-                      solver='eigen', store_covariance=False, tol=0.0001)
-        lda.fit(Xa, Y1)
-        return(lda.score(Xb1,Xb2,Y2))
-
-    if (imputation_method=='closest'):
-        #Imputation of Training set
-        #mean
-        mean=np.zeros(dim)
+    x_test_imputed = np.copy(x_test)
+    for i in range(len_testing):
         for j in range(dim):
-            n=0
-            for i in range(len_training):
-                val=X1[i][j]
-                if (val!=0):
-                    n+=1
-                    mean[j]+=val
-            mean[j]/=n
+            if x_test_imputed[i][j] == 0:
+                x_test_imputed[i][j] = grand_mean[j]
 
-        #variance
+    lda = LinearDiscriminantAnalysis()
+    lda.fit(x_train_imputed, y_train)
+    return lda.score(x_test_imputed, y_test)
 
-        var=np.zeros(dim)
+
+def _acc_conditional_mean(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+) -> float:
+    dim = len(x_train[0])
+    len_training = len(x_train)
+    len_testing = len(x_test)
+
+    count_0 = 0
+    mean_0 = np.zeros(dim)
+    count_1 = 0
+    mean_1 = np.zeros(dim)
+
+    for i in range(len_training):
+        if y_train[i] == 0:
+            for j in range(dim):
+                val = x_train[i][j]
+                if val != 0:
+                    count_0 += 1
+                    mean_0[j] += val
+        else:
+            for j in range(dim):
+                val = x_train[i][j]
+                if val != 0:
+                    count_1 += 1
+                    mean_1[j] += val
+
+    for j in range(dim):
+        mean_0[j] = mean_0[j] / count_0
+    for j in range(dim):
+        mean_1[j] = mean_1[j] / count_1
+
+    x_train_imputed = np.copy(x_train)
+    for i in range(len_training):
         for j in range(dim):
-            n=0
-            for i in range(len_training):
-                val=X1[i][j]
-                if (val!=0):
-                    n+=1
-                    var[j]+=(val-mean[j])**2
-            var[j]/=n
+            if x_train_imputed[i][j] == 0:
+                if y_train[i] == 0:
+                    x_train_imputed[i][j] = mean_0[j]
+                if y_train[i] == 1:
+                    x_train_imputed[i][j] = mean_1[j]
+
+    x_test_class0 = np.copy(x_test)
+    for i in range(len_testing):
+        for j in range(dim):
+            if x_test_class0[i][j] == 0:
+                x_test_class0[i][j] = mean_0[j]
+
+    x_test_class1 = np.copy(x_test)
+    for i in range(len_testing):
+        for j in range(dim):
+            if x_test_class1[i][j] == 0:
+                x_test_class1[i][j] = mean_1[j]
+
+    # Conditional mean imputation fills missing values with per-class means,
+    # so test samples get two different feature matrices (one per assumed class).
+    # BinaryLDA scores each class's matrix separately, unlike sklearn's LDA.
+    lda = ml.BinaryLDA(
+        n_components=None,
+        priors=None,
+        shrinkage=None,
+        solver="eigen",
+        store_covariance=False,
+        tol=0.0001,
+    )
+    lda.fit(x_train_imputed, y_train)
+    return lda.score(x_test_class0, x_test_class1, y_test)
 
 
-        #Actual Imputation
-        Xa=np.copy(X1)
-        for i in range(len_training):
-            for j in range(dim):
-                if (Xa[i][j]==0):
-                    min_dis=dim+1
-                    closest_index=0
-                    for a in range (100):
-                        int=rd.randint(0, len_training-1)
-                        if (Xa[int][j]!=0) and Y1[int]== Y1[i]:
-                            dis=distance(Xa[i],Xa[int],var)
-                            if (dis<min_dis):
-                                closest_index=int
-                                min_dis=dis
-                    Xa[i][j]=Xa[closest_index][j]
+def _acc_closest(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+) -> float:
+    dim = len(x_train[0])
+    len_training = len(x_train)
+    len_testing = len(x_test)
 
-        Xb=np.copy(X2)
-        for i in range(len_testing):
-            for j in range(dim):
-                if (Xb[i][j]==0):
-                    min_dis=dim+1
-                    closest_index=0
-                    for a in range (100):
-                        int=rd.randint(0, len_testing-1)
-                        if (Xb[int][j]!=0):
-                            dis=distance(Xb[i],Xb[int],var)
-                            if (dis<min_dis):
-                                closest_index=int
-                                min_dis=dis
-                    Xb[i][j]=Xb[closest_index][j]
+    mean = _compute_feature_mean(x_train, dim, len_training)
+    var = _compute_feature_variance(x_train, mean, dim, len_training)
+
+    x_train_imputed = _impute_closest_single(
+        x_train, y_train, var, len_training, dim, use_labels=True
+    )
+    x_test_imputed = _impute_closest_single(
+        x_test, None, var, len_testing, dim, use_labels=False
+    )
+
+    lda = LinearDiscriminantAnalysis()
+    lda.fit(x_train_imputed, y_train)
+    return lda.score(x_test_imputed, y_test)
 
 
-        lda = LinearDiscriminantAnalysis()
-        lda.fit(Xa, Y1)
-        return(lda.score(Xb,Y2))
+def _acc_regression(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+) -> float:
+    dim = len(x_train[0])
+    len_training = len(x_train)
+    len_testing = len(x_test)
 
-    if (imputation_method=='regression'):
-        Xtraindet=np.copy(X1)
-        Xtestdet=np.copy(X2)
-        for j in range(1,dim):
-            Xs=[]
-            Xn=[]
+    x_train_imputed = np.copy(x_train)
+    x_test_imputed = np.copy(x_test)
+
+    for j in range(1, dim):
+        features = []
+        targets = []
+        for h in range(len_training):
+            if x_train_imputed[h][j] != 0:
+                features.append(x_train_imputed[h][0:j])
+                targets.append(x_train_imputed[h][j])
+        reg = LinearRegression().fit(features, targets)
+
+        for h in range(len_training):
+            if x_train_imputed[h][j] == 0:
+                x_train_imputed[h][j] = reg.predict([x_train_imputed[h][0:j]])[0]
+        for h in range(len_testing):
+            if x_test_imputed[h][j] == 0:
+                x_test_imputed[h][j] = reg.predict([x_test_imputed[h][0:j]])[0]
+
+    lda = LinearDiscriminantAnalysis()
+    lda.fit(x_train_imputed, y_train)
+    return lda.score(x_test_imputed, y_test)
+
+
+def _acc_multiple_regression(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+) -> float:
+    dim = len(x_train[0])
+    len_training = len(x_train)
+    len_testing = len(x_test)
+
+    mean = _compute_feature_mean(x_train, dim, len_training)
+    var = _compute_feature_variance(x_train, mean, dim, len_training)
+
+    results = []
+    for _ in range(NB_MULTIPLE_IMPUTATION):
+        x_train_imputed = np.copy(x_train)
+        x_test_imputed = np.copy(x_test)
+
+        for j in range(1, dim):
+            features = []
+            targets = []
             for h in range(len_training):
-                if (Xtraindet[h][j]!=0):
-                    Xs.append(Xtraindet[h][0:j])
-                    Xn.append(Xtraindet[h][j])
-            reg = LinearRegression().fit(Xs, Xn)
+                if x_train_imputed[h][j] != 0:
+                    features.append(x_train_imputed[h][0:j])
+                    targets.append(x_train_imputed[h][j])
+            reg = LinearRegression().fit(features, targets)
 
             for h in range(len_training):
-                if (Xtraindet[h][j]==0):
-                    Xtraindet[h][j]=(reg.predict([Xtraindet[h][0:j]]))[0]
+                if x_train_imputed[h][j] == 0:
+                    x_train_imputed[h][j] = reg.predict(
+                        [x_train_imputed[h][0:j]]
+                    )[0] + np.random.normal(0, np.sqrt(var[j]))
             for h in range(len_testing):
-                if (Xtestdet[h][j]==0):
-                    Xtestdet[h][j]=(reg.predict([Xtestdet[h][0:j]]))[0]
+                if x_test_imputed[h][j] == 0:
+                    x_test_imputed[h][j] = reg.predict(
+                        [x_test_imputed[h][0:j]]
+                    )[0] + np.random.normal(0, np.sqrt(var[j]))
 
         lda = LinearDiscriminantAnalysis()
-        lda.fit(Xtraindet, Y1)
-        return(lda.score(Xtestdet, Y2))
+        lda.fit(x_train_imputed, y_train)
+        results.append(lda.predict(x_test_imputed))
 
-    if (imputation_method=='multiple_regression'):
-        mean=np.zeros(dim)
-        for j in range(dim):
-            n=0
-            for i in range(len_training):
-                val=X1[i][j]
-                if (val!=0):
-                    n+=1
-                    mean[j]+=val
-            mean[j]/=n
+    sol = _majority_vote(results)
+    return accuracy_score(y_test, sol)
 
-        #variance
 
-        var=np.zeros(dim)
-        for j in range(dim):
-            n=0
-            for i in range(len_training):
-                val=X1[i][j]
-                if (val!=0):
-                    n+=1
-                    var[j]+=(val-mean[j])**2
-            var[j]/=n
+IMPUTATION_METHODS = {
+    "multiple_closest": _acc_multiple_closest,
+    "no_imputation": _acc_no_imputation,
+    "grand_mean": _acc_grand_mean,
+    "conditional_mean": _acc_conditional_mean,
+    "closest": _acc_closest,
+    "regression": _acc_regression,
+    "multiple_regression": _acc_multiple_regression,
+}
 
-        results=[]
-        for i in range(nb_multiple_imputation):
-            Xtraindet=np.copy(X1)
-            Xtestdet=np.copy(X2)
-            for j in range(1,dim):
-                Xs=[]
-                Xn=[]
-                for h in range(len_training):
-                    if (Xtraindet[h][j]!=0):
-                        Xs.append(Xtraindet[h][0:j])
-                        Xn.append(Xtraindet[h][j])
-                reg = LinearRegression().fit(Xs, Xn)
 
-                for h in range(len_training):
-                    if (Xtraindet[h][j]==0):
-                        Xtraindet[h][j]=(reg.predict([Xtraindet[h][0:j]]))[0]+np.random.normal(0, np.sqrt(var[j]))
-                for h in range(len_testing):
-                    if (Xtestdet[h][j]==0):
-                        Xtestdet[h][j]=(reg.predict([Xtestdet[h][0:j]]))[0]+np.random.normal(0, np.sqrt(var[j]))
-
-            lda = LinearDiscriminantAnalysis()
-            lda.fit(Xtraindet, Y1)
-            results.append(lda.predict(Xtestdet))
-
-        sol=maj_vote(results)
-
-        from sklearn.metrics import accuracy_score
-        return accuracy_score(Y2, sol)
+def acc(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+    imputation_method: str,
+) -> float:
+    method_func = IMPUTATION_METHODS.get(imputation_method)
+    if method_func is None:
+        raise ValueError(f"Unknown imputation method: {imputation_method}")
+    return method_func(x_train, y_train, x_test, y_test)
